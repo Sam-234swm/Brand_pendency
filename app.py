@@ -1,58 +1,49 @@
-
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(layout="wide")
+# Page setup
+st.set_page_config(page_title="ERP Order Report Viewer", layout="wide")
 st.title("📊 ERP Order Report Viewer")
 
-uploaded_file = st.file_uploader("Upload ERP CSV Report", type=["csv"])
-
+# Upload CSV
+uploaded_file = st.file_uploader("Upload ERP Order Report CSV", type=["csv"])
 if uploaded_file is not None:
-    # Try multiple CSV read methods
     try:
-        df = pd.read_csv(uploaded_file, low_memory=False, encoding='utf-8')
-    except Exception:
+        # Try loading with default encoding first
         try:
-            uploaded_file.seek(0)
-            df = pd.read_csv(uploaded_file, sep='\t', engine='python', encoding='utf-8')
-        except Exception:
-            try:
-                uploaded_file.seek(0)
-                df = pd.read_csv(uploaded_file, sep=';', engine='python', encoding='utf-8')
-            except Exception as e:
-                st.error(f"❌ Could not read CSV file. Error: {e}")
-                st.stop()
+            df = pd.read_csv(uploaded_file, encoding='utf-8', low_memory=False)
+        except UnicodeDecodeError:
+            df = pd.read_csv(uploaded_file, encoding='ISO-8859-1', low_memory=False)
 
-    st.success("✅ File successfully loaded.")
-    
-    # Display file name
-    st.write(f"### File: `{uploaded_file.name}`")
-    
-    # Clean column names
-    df.columns = df.columns.str.strip()
-    
-    # Brand-specific filter conditions
-    brand_conditions = {
-        "Krishna Herbal": ["Attempted delivery", "Not dispatched", "Pickedup", "In-transit"],
-        "Kiro": ["Attempted delivery", "Not dispatched", "Pickedup"],
-        "Kapiva": ["Attempted delivery", "Not dispatched", "Pickedup"],
-        "Plix": ["Attempted delivery", "Not dispatched", "Pickedup"]
-    }
-
-    # Check essential columns
-    required_cols = {"Brand Name", "Order Status"}
-    if not required_cols.issubset(df.columns):
-        st.error("❌ Required columns missing in file: 'Brand Name', 'Order Status'")
-        st.stop()
-
-    # Display filtered tables per brand
-    for brand, statuses in brand_conditions.items():
-        st.markdown(f"## 📦 {brand} Orders")
-        filtered = df[(df["Brand Name"] == brand) & (df["Order Status"].isin(statuses))]
-        
-        if filtered.empty:
-            st.info("No data available for this brand.")
+        # Normalize column names
+        df.columns = df.columns.str.strip()
+        if 'Brand Name' not in df.columns or 'Order Status' not in df.columns:
+            st.error("Required columns 'Brand Name' or 'Order Status' not found in the uploaded file.")
         else:
-            st.dataframe(filtered.reset_index(drop=True), use_container_width=True)
+            # Define allowed order status
+            common_status = ["Attempted delivery", "Not dispatched", "Pickedup"]
+            extra_status = ["In-transit"]
+
+            # Get list of unique brands
+            brands = df['Brand Name'].dropna().unique()
+
+            # Show table per brand
+            for brand in sorted(brands):
+                with st.expander(f"📦 {brand}", expanded=False):
+                    brand_df = df[df['Brand Name'] == brand]
+
+                    # Define filters
+                    if brand.strip().lower() == "krishna herbal":
+                        filtered_df = brand_df[brand_df['Order Status'].isin(common_status + extra_status)]
+                    else:
+                        filtered_df = brand_df[brand_df['Order Status'].isin(common_status)]
+
+                    # Display pivot-like table
+                    if not filtered_df.empty:
+                        st.dataframe(filtered_df.reset_index(drop=True), use_container_width=True)
+                    else:
+                        st.info("No matching records found for selected Order Statuses.")
+    except Exception as e:
+        st.error(f"❌ Error reading file: {e}")
 else:
-    st.info("Please upload a CSV file.")
+    st.info("⬆️ Upload a CSV file to begin.")
