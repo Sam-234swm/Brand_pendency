@@ -1,56 +1,84 @@
-import streamlit as st
+from flask import Flask, render_template, request
 import pandas as pd
+import os
 
-st.set_page_config(layout="wide")
-st.title("📦 Brand-wise Order Status Viewer")
+app = Flask(__name__)
 
-# Step 1: Upload CSV file
-uploaded_file = st.file_uploader("Upload your ERP OrderReport CSV", type=["csv"])
+# Configurable options
+ALLOWED_EXTENSIONS = {'xls', 'xlsx'}
+UPLOAD_FOLDER = 'uploads'
+BRANDS = ["Cosmix", "Krishna's Herbal", "Kiro", "The Whole Truth", "Giva"]
+ORDER_STATUS_FILTERS = {
+    "Krishna's Herbal": ['Not Dispatched', 'Pickedup', 'Attempted Delivery', 'In-transit'],
+    "default": ['Not Dispatched', 'Pickedup', 'Attempted Delivery']
+}
 
-if uploaded_file:
-    try:
-        # Load CSV with fallback encoding
-        try:
-            df = pd.read_csv(uploaded_file, encoding='utf-8', engine='python', on_bad_lines='skip')
-        except UnicodeDecodeError:
-            df = pd.read_csv(uploaded_file, encoding='ISO-8859-1', engine='python', on_bad_lines='skip')
+# Ensure upload folder exists
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-        st.success("✅ File loaded successfully!")
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-        # Step 2: Normalize column names
-        df.columns = df.columns.str.strip()
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    tables = {}
+    error = None
 
-        # Step 3: Required columns
-        required_columns = ["Client Name", "Order Status"]
-        if not all(col in df.columns for col in required_columns):
-            st.error(f"❌ Missing columns: {set(required_columns) - set(df.columns)}")
+    if request.method == 'POST':
+        file = request.files['file']
+
+        if file and allowed_file(file.filename):
+            file_path = os.path.join(UPLOAD_FOLDER, file.filename)
+            file.save(file_path)
+
+            try:
+                df = pd.read_excel(file_path, engine='openpyxl')
+            except Exception as e:
+                error = f"❌ Error reading file: {e}"
+                return render_template('index.html', tables=tables, error=error)
+
+            # Basic cleanup
+            df.columns = [str(c).strip() for c in df.columns]
+
+            # Ensure necessary columns
+            required_cols = ['Client Name', 'Order Status', 'Dark Store', 'Order Date', 'AWB No']
+            if not all(col in df.columns for col in required_cols):
+                error = f"Missing columns in file. Required: {required_cols}"
+                return render_template('index.html', tables=tables, error=error)
+
+            # Convert date to readable string
+            df['Order Date'] = pd.to_datetime(df['Order Date'], errors='coerce').dt.strftime('%d %B')
+            df.dropna(subset=['Order Date'], inplace=True)
+
+            for brand in BRANDS:
+                brand_df = df[df['Client Name'].str.contains(brand, case=False, na=False)]
+                if brand_df.empty:
+                    continue
+
+                # Choose brand-specific or default statuses
+                statuses = ORDER_STATUS_FILTERS.get(brand, ORDER_STATUS_FILTERS['default'])
+                brand_df = brand_df[brand_df['Order Status'].isin(statuses)]
+
+                # Pivot table
+                pivot = pd.pivot_table(
+                    brand_df,
+                    values='AWB No',
+                    index=['Dark Store', 'Order Date'],
+                    columns='Order Status',
+                    aggfunc='count',
+                    fill_value=0,
+                    margins=True,
+                    margins_name='Grand Total'
+                )
+
+                pivot = pivot.reset_index()
+                html_table = pivot.to_html(classes='table table-bordered table-sm table-striped', index=False, escape=False)
+                tables[brand] = html_table
+
         else:
-            # Step 4: Filter for only your 5 clients
-            brand_list = ["Cosmix", "Krishna's Herbal", "Kiro", "The Whole Truth", "Giva"]
-            df = df[df["Client Name"].isin(brand_list)]
+            error = "Only Excel files (.xls, .xlsx) are allowed."
 
-            # Define status filters
-            common_statuses = ["Attempted delivery", "Not dispatched", "Pickedup"]
-            krishna_statuses = common_statuses + ["In-transit"]
+    return render_template('index.html', tables=tables, error=error)
 
-            # Step 5: Brand-wise Display
-            for brand in brand_list:
-                st.subheader(f"📌 {brand}")
-
-                # Filter based on brand and status
-                if brand == "Krishna's Herbal":
-                    brand_df = df[(df["Client Name"] == brand) & (df["Order Status"].isin(krishna_statuses))]
-                else:
-                    brand_df = df[(df["Client Name"] == brand) & (df["Order Status"].isin(common_statuses))]
-
-                if not brand_df.empty:
-                    # Show pivot-style grouped count
-                    summary = brand_df.groupby(["Order Status"]).size().reset_index(name="Count")
-                    st.dataframe(summary, use_container_width=True)
-                else:
-                    st.info("No matching orders for this brand.")
-
-    except Exception as e:
-        st.error(f"❌ Error reading file: {e}")
-else:
-    st.warning("Please upload a CSV file to begin.")
+if __name__ == '__main__':
+    app.run(debug=True)
