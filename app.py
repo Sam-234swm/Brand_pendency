@@ -4,7 +4,7 @@ import pandas as pd
 st.set_page_config(page_title="Brand Pendency Report", layout="wide")
 st.title("📦 Brand Order Status Pivot Report")
 
-uploaded_file = st.file_uploader("Upload ERP Excel File", type=["csv"])
+uploaded_file = st.file_uploader("Upload ERP Excel File", type=["xls","xlsx"])
 
 BRANDS = ["Cosmix", "Krishna's Herbal", "Kiro", "The Whole Truth", "Giva"]
 ORDER_STATUS_FILTERS = {
