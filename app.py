@@ -9,11 +9,11 @@ uploaded_file = st.file_uploader("Upload your ERP OrderReport CSV", type=["csv"]
 
 if uploaded_file:
     try:
-        # More tolerant CSV loader
+        # More tolerant CSV loader with updated syntax
         try:
-            df = pd.read_csv(uploaded_file, encoding='utf-8', engine='python', error_bad_lines=False)
+            df = pd.read_csv(uploaded_file, encoding='utf-8', engine='python', on_bad_lines='skip')
         except UnicodeDecodeError:
-            df = pd.read_csv(uploaded_file, encoding='ISO-8859-1', engine='python', error_bad_lines=False)
+            df = pd.read_csv(uploaded_file, encoding='ISO-8859-1', engine='python', on_bad_lines='skip')
 
         st.success("✅ File loaded successfully!")
 
@@ -41,7 +41,7 @@ if uploaded_file:
                     brand_df = df[(df["Brand Name"] == brand) & (df["Order Status"].isin(base_status))]
 
                 if not brand_df.empty:
-                    # Optional: Pivot-like display
+                    # Pivot-like summary
                     summary = brand_df.groupby(["Order Status"]).size().reset_index(name="Count")
                     st.dataframe(summary, use_container_width=True)
                 else:
