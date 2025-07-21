@@ -21,7 +21,7 @@ if uploaded_file:
         df.columns = df.columns.str.strip()
 
         # Step 3: Required columns
-        required_columns = ["Brand Name", "Order Status"]
+        required_columns = ["Client Name", "Order Status"]
         if not all(col in df.columns for col in required_columns):
             st.error(f"❌ Missing columns: {set(required_columns) - set(df.columns)}")
         else:
